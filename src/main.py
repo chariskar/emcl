@@ -1,0 +1,79 @@
+from tortoise import Tortoise
+from utils.db import NewsSchema
+import discord
+from discord.ext import commands
+import asyncio
+import importlib
+import pkgutil
+from discord import app_commands
+import dotenv, os
+from utils.db import ReporterSchema
+dotenv.load_dotenv()
+
+intents = discord.Intents.default()
+intents.members = True
+bot = commands.Bot(command_prefix="/", intents=intents)
+
+def load_app_command_modules(tree: app_commands.CommandTree, package: str):
+    """
+    Recursively scan `package` (e.g. "commands") for any sub-modules,
+    import them, look for a `command` export, and register it if valid.
+    """
+    pkg = importlib.import_module(package)
+
+    for finder, module_name, is_pkg in pkgutil.walk_packages(pkg.__path__, prefix=package + "."):
+        print(f"[LOAD] Trying module {module_name}")
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as e:
+            print(f"[ERROR] Failed to import {module_name}: {e}")
+            continue
+
+        cmd = getattr(module, "command", None)
+        if cmd is None:
+            print(f"[SKIP] No `command` export in {module_name}")
+            continue
+
+        if not isinstance(cmd, (app_commands.Command, app_commands.Group)):
+            print(f"[SKIP] `command` in {module_name} is not a Command or Group")
+            continue
+
+        # Try to add it
+        try:
+            tree.add_command(cmd)
+            print(f"[OK] Registered `{cmd.name}` from {module_name}")
+        except Exception as e:
+            print(f"[ERROR] Could not register `{cmd.name}` from {module_name}: {e}")
+
+@bot.event
+async def on_ready():
+    await Tortoise.init(
+    db_url="sqlite://db.db",
+    modules={"models": ["utils.db"]},
+    )
+    await Tortoise.generate_schemas()
+    print("Schema generated!")
+    
+    print(f"Logged in as {bot.user} ({bot.user.id})")
+    reporter_role = 1376639373721866240
+    
+    # Load slash command groups
+    load_app_command_modules(bot.tree, "commands")
+
+    # Sync slash commands
+    await bot.tree.sync()
+    print("Commands synced!")
+
+    guild = bot.get_guild(1376636845965705226)
+    if not guild: return
+    role = guild.get_role(reporter_role)
+    if not role: return
+    members = role.members
+    for member in members:
+        user_id = member.id
+        existing = await ReporterSchema.get_or_none(user_id=user_id)
+        if not existing:
+            await ReporterSchema.create(user_id=user_id)
+
+if __name__ == "__main__":
+    bot.run(str(os.environ.get("TOKEN")))
