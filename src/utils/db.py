@@ -38,9 +38,10 @@ class NewsSchema(Model):
         )
         embed.set_image(url=self.image_url)
         # Show credit
-        embed.add_field(name="Credit", value=self.credit, inline=True)
+        embed.add_field(name="Credit", value=f"<@{self.credit}>", inline=True)
+        
         try:
-            reporter_mention = f"@<{self.reporter}>"
+            reporter_mention = f"<@{self.reporter}>"
         except Exception:
             reporter_mention = str(self.reporter)
             
