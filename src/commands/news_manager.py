@@ -47,7 +47,8 @@ class NewsCommands(app_commands.Group):
             credit=credit,
             reporter=str(interaction.user.id),
             language=language,
-            editor=reporter
+            editor=reporter,
+            region=region
         )
         if not news:
             return await interaction.response.send_message(

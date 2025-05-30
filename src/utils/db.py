@@ -18,12 +18,14 @@ class ReporterSchema(Model):
 
 class NewsSchema(Model):
     id = fields.IntField(pk=True)
-    title = fields.CharField(max_length=255)
-    description = fields.TextField()
+    title = fields.CharField(max_length=255, unique=True)
+    description = fields.TextField(unique=True)
     image_url = fields.CharField(max_length=500)
     credit = fields.CharField(max_length=100, null=False)
     reporter  = fields.CharField(max_length=100, null=False)
     language = fields.CharField(max_length=10)
+    region = fields.CharField(maxlength=50)
+    
     editor: ForeignKeyNullableRelation[ReporterSchema] = fields.ForeignKeyField(
         "models.ReporterSchema", related_name="news_items", on_delete=fields.SET_NULL, null=True
     )
@@ -38,10 +40,12 @@ class NewsSchema(Model):
         # Show credit
         embed.add_field(name="Credit", value=self.credit, inline=True)
         try:
-            reporter_mention = f"@{self.reporter}"
+            reporter_mention = f"@<{self.reporter}>"
         except Exception:
             reporter_mention = str(self.reporter)
+            
         embed.add_field(name="Reporter", value=reporter_mention, inline=True)
+        embed.add_field(name="region", value=self.region, inline=True)
         return embed
     
     def is_similar_to(self, other: "NewsSchema", threshold: float = 0.85) -> bool:
@@ -59,6 +63,7 @@ class NewsSchema(Model):
             "reporter": self.reporter,
             "language": self.language,
             "editor": self.editor.user_id if self.editor else None,
+            "region": self.region if self.region else "global"
         }
 
     @classmethod
@@ -125,6 +130,7 @@ class NewsSchema(Model):
         reporter: str,
         language: str,
         editor: Optional[ReporterSchema] = None,
+        region: Optional[str] = None,
         similarity_threshold: float = 0.85
     ) -> Optional["NewsSchema"]:
         existing_news = await cls.find_similar(title, description, language, similarity_threshold)
@@ -138,5 +144,6 @@ class NewsSchema(Model):
             credit=credit,
             reporter=reporter,
             language=language,
-            editor=editor
+            editor=editor,
+            region=region
         )
