@@ -1,10 +1,9 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
-
+import os
 from utils.db import ReporterSchema  # adjust to your module path
 
-REQUIRED_ROLE_ID = 1376636846003454093
+REQUIRED_ROLE_ID = int(str(os.environ.get("REPORTER_ROLE")))
 
 class ReporterManager(app_commands.Group):
     def __init__(self):
@@ -27,7 +26,10 @@ class ReporterManager(app_commands.Group):
 
     @app_commands.command(name="add", description="Add a reporter by user ID")
     async def add_reporter(self, interaction: discord.Interaction, user_id: str):
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
         existing = await ReporterSchema.get_or_none(user_id=user_id)
+        
         if existing:
             await interaction.response.send_message("Reporter already exists.", ephemeral=True)
         else:
@@ -36,6 +38,8 @@ class ReporterManager(app_commands.Group):
 
     @app_commands.command(name="remove", description="Remove a reporter by user ID")
     async def remove_reporter(self, interaction: discord.Interaction, user_id: int):
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
         rep = await ReporterSchema.get_or_none(user_id=user_id)
         if rep:
             await rep.delete()
@@ -46,6 +50,8 @@ class ReporterManager(app_commands.Group):
     @app_commands.command(name="suspend", description="Suspend a reporter by user ID")
     async def suspend_reporter(self, interaction: discord.Interaction, user_id: int):
         rep = await ReporterSchema.get_or_none(user_id=user_id)
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
         if rep:
             rep.suspended = True
             await rep.save()
@@ -56,6 +62,8 @@ class ReporterManager(app_commands.Group):
     @app_commands.command(name="unsuspend", description="Unsuspend a reporter by user ID")
     async def unsuspend_reporter(self, interaction: discord.Interaction, user_id: int):
         rep = await ReporterSchema.get_or_none(user_id=user_id)
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
         if rep:
             rep.suspended = False
             await rep.save()
@@ -75,6 +83,8 @@ class ReporterManager(app_commands.Group):
             
     async def add_strike(self, interaction: discord.Interaction, user_id: int):
         """Add a strike to a reporter."""
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
         rep = await ReporterSchema.get_or_none(user_id=user_id)
         if rep:
             rep.strikes += 1
@@ -83,6 +93,16 @@ class ReporterManager(app_commands.Group):
         else:
             await interaction.response.send_message("Reporter not found.", ephemeral=True)
 
-
+    async def remove_strike(self, interaction: discord.Interaction, user_id: int):
+        allowed = await self.interaction_check(interaction)
+        if not allowed: await interaction.response.send_message("You are not allowed to perform this action"); return
+        rep = await ReporterSchema.get_or_none(user_id=user_id)
+        if rep:
+            rep.strikes -= 1
+            await rep.save()
+            await interaction.response.send_message(f"Strike removed from reporter `{user_id}`. Total strikes: {rep.strikes}", ephemeral=True)
+        else:
+            await interaction.response.send_message("Reporter not found.", ephemeral=True)
+            
 # export the group
 command = ReporterManager()

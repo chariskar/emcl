@@ -1,18 +1,14 @@
 from tortoise import Tortoise
-from utils.db import NewsSchema
 import discord
 from discord.ext import commands
-import asyncio
+import uvicorn
 import importlib
 import pkgutil
 from discord import app_commands
-import dotenv, os
+import dotenv, os, asyncio, threading
 from utils.db import ReporterSchema
 dotenv.load_dotenv()
-
-intents = discord.Intents.default()
-intents.members = True
-bot = commands.Bot(command_prefix="/", intents=intents)
+from utils.globals import *
 
 def load_app_command_modules(tree: app_commands.CommandTree, package: str):
     """
@@ -21,7 +17,7 @@ def load_app_command_modules(tree: app_commands.CommandTree, package: str):
     """
     pkg = importlib.import_module(package)
 
-    for finder, module_name, is_pkg in pkgutil.walk_packages(pkg.__path__, prefix=package + "."):
+    for _finder, module_name, _is_pkg in pkgutil.walk_packages(pkg.__path__, prefix=package + "."):
         print(f"[LOAD] Trying module {module_name}")
         try:
             module = importlib.import_module(module_name)
@@ -45,25 +41,14 @@ def load_app_command_modules(tree: app_commands.CommandTree, package: str):
         except Exception as e:
             print(f"[ERROR] Could not register `{cmd.name}` from {module_name}: {e}")
 
-@bot.event
-async def on_ready():
-    await Tortoise.init(
-    db_url="sqlite://db.db",
-    modules={"models": ["utils.db"]},
-    )
-    await Tortoise.generate_schemas()
-    print("Schema generated!")
-    
-    print(f"Logged in as {bot.user} ({bot.user.id})")
+
+seted_up = False
+async def setup(seted_up: bool):
+    if seted_up: return
+    seted_up = True
+     
     reporter_role = 1376639373721866240
     
-    # Load slash command groups
-    load_app_command_modules(bot.tree, "commands")
-
-    # Sync slash commands
-    await bot.tree.sync()
-    print("Commands synced!")
-
     guild = bot.get_guild(1376636845965705226)
     if not guild: return
     role = guild.get_role(reporter_role)
@@ -75,5 +60,29 @@ async def on_ready():
         if not existing:
             await ReporterSchema.create(user_id=user_id)
 
+
+def start_api():
+    uvicorn.run("utils.api:router", host="0.0.0.0", port=3000)  # No reload
+
+@bot.event
+async def on_ready():
+    await Tortoise.init(
+        db_url="sqlite://db.db",
+        modules={"models": ["utils.db"]},
+    )
+    await Tortoise.generate_schemas()
+    print("Schema generated!")
+
+    print(f"Logged in as {bot.user} ({bot.user.id})")
+
+    load_app_command_modules(bot.tree, "commands")
+    await bot.tree.sync()
+    print("Commands synced")
+    await setup(seted_up)
+
+    
 if __name__ == "__main__":
+
+    api_thread = threading.Thread(target=start_api, daemon=True)
+    api_thread.start()
     bot.run(str(os.environ.get("TOKEN")))

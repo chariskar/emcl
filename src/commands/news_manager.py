@@ -1,13 +1,13 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
+import os
 
-from tortoise.exceptions import IntegrityError
-from utils.db import NewsSchema, ReporterSchema  # adjust imports
+import discord.guild
+from utils.db import NewsSchema, ReporterSchema, Region, GuildSettings
 
-GUILD_ID = discord.Object(id=1376636845965705226)
-NEWS_CHANNEL_ID = 1376957360727134308
-
+GUILD_ID = discord.Object(id=str(os.environ.get("GUILD_ID")))
+NEWS_CHANNEL_ID = int(str(os.environ.get("NEWS_CHANNEL_ID")))
+ADMIN_ID = str(os.environ.get("ADMIN_ID")).split(",")
 
 class NewsCommands(app_commands.Group):
     def __init__(self):
@@ -29,8 +29,9 @@ class NewsCommands(app_commands.Group):
         description: str,
         image_url: str,
         credit: str,
-        region: str = "Global",
-        language: str = "en"
+        category: str,
+        region: Region = Region.Global,
+        language: str = "en",
     ):
         # permission check
         reporter = await ReporterSchema.get_or_none(user_id=interaction.user.id)
@@ -39,7 +40,6 @@ class NewsCommands(app_commands.Group):
                 "🚫 You are not registered as a reporter.", ephemeral=True
             )
 
-        # attempt safe create (returns None on similar duplicate)
         news = await NewsSchema.create_safe(
             title=title,
             description=description,
@@ -48,13 +48,10 @@ class NewsCommands(app_commands.Group):
             reporter=str(interaction.user.id),
             language=language,
             editor=reporter,
-            region=region
+            region=region,
+            category=category
         )
-        if not news:
-            return await interaction.response.send_message(
-                "⚠️ A similar news item already exists in that language.", ephemeral=True
-            )
-
+        if not news: return
         # post to channel
         guild = interaction.client.get_guild(GUILD_ID.id)
         if not guild:
@@ -62,19 +59,34 @@ class NewsCommands(app_commands.Group):
                 "⚠️ News saved but guild not found.", ephemeral=True
             )
         channel = guild.get_channel(NEWS_CHANNEL_ID)
+        
         if not isinstance(channel, discord.TextChannel):
             return await interaction.response.send_message(
                 "⚠️ News saved but target channel invalid.", ephemeral=True
             )
-
-        await channel.send(embed=news.to_embed())
+        message = await channel.send(embed=news.to_embed())
+        news.message_id = message.id
+        await news.save()
+        reporter.posts += 1
+        await reporter.save()
+        NEWS_CHANNELS = await GuildSettings.all_by_region()
+        
+        for guilds in NEWS_CHANNELS[region.value]:
+            guild_id = None
+            for key in guilds: guild_id = key
+            if not guild_id: return
+            guild = interaction.client.get_guild(guild_id)
+            if not guild: return
+            channel = guild.get_channel(guilds[guild_id])
+            if not isinstance(channel, discord.TextChannel): return
+            await channel.send(embed=news.to_embed())
+            
         await interaction.response.send_message(
             "✅ News created and posted!", ephemeral=True
         )
 
-        # bump reporter post count
-        reporter.posts += 1
-        await reporter.save()
+        
+        
 
     @app_commands.command(name="delete", description="Delete a news item by ID")
     @app_commands.describe(news_id="The ID of the news item to delete")
@@ -82,6 +94,7 @@ class NewsCommands(app_commands.Group):
         news = await NewsSchema.get_or_none(id=news_id)
         if not news:
             return await interaction.response.send_message("Not found.", ephemeral=True)
+        if not int(news.reporter) == interaction.user.id or not str(interaction.user.id) in ADMIN_ID: await interaction.response.send_message("You are not allowed to delete this"); return
         await news.delete()
         await interaction.response.send_message(f"🗑️ Deleted news `{news_id}`.", ephemeral=True)
 
