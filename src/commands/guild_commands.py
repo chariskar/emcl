@@ -72,11 +72,11 @@ class GuildCommands(app_commands.Group):
     ) -> None:
         author: discord.Member = interaction.user  # type: ignore
         # Permission check
-        """if not getattr(author.guild_permissions, "manage_guild", False):
+        if not getattr(author.guild_permissions, "manage_guild", False):
             await interaction.response.send_message(
                 "❌ You don’t have Manage Server permission.", ephemeral=True
             )
-            return"""
+            return
 
 
         if interaction.guild_id is None:
@@ -154,11 +154,11 @@ class GuildCommands(app_commands.Group):
         author: discord.Member = interaction.user  # type: ignore
 
         # Permission check
-        """if not getattr(author.guild_permissions, "manage_guild", False):
+        if not getattr(author.guild_permissions, "manage_guild", False):
             await interaction.response.send_message(
                 "❌ You don’t have Manage Server permission.", ephemeral=True
             )
-            return"""
+            return
 
         if interaction.guild_id is None:
             await interaction.response.send_message(
