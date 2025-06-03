@@ -15,11 +15,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+
 from fastapi import APIRouter, Query
 from typing import Optional
-from .db import NewsSchema  # assuming this is where your model is
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from .db import NewsSchema, Category
+from fastapi.responses import FileResponse, HTMLResponse
 from .globals import bot
 from fastapi import HTTPException
 import os
@@ -32,12 +32,12 @@ async def get_news_by_title(title: str, q: Optional[str] = None):
 
 @router.get("/api/filter-by-language/{lang}")
 async def get_by_language(lang: str):
-    news_items = await NewsSchema.filter_by_language(lang)
+    news_items = await NewsSchema.filter_by_language(lang.upper())
     return [item.to_dict(bot) for item in news_items]
 
 @router.get("/api/recent/{lang}")
 async def get_recent(lang: str, limit: int = 10):
-    news_items = await NewsSchema.get_recent_by_language(lang, limit)
+    news_items = await NewsSchema.get_recent_by_language(lang.upper(), limit)
     return [await item.to_dict(bot) for item in news_items]
 
 @router.get("/api/search")
@@ -52,7 +52,7 @@ async def search_news(
 
 @router.get('/api/search/all/{query}')
 async def search_all_news(query: str):
-    news_items = await NewsSchema.search_all(query)
+    news_items = await NewsSchema.search_all(query.upper())
     return [await item.to_dict(bot) for item in news_items]
 
 @router.get("/", response_class=HTMLResponse)
@@ -78,3 +78,10 @@ async def serve_asset(filename: str):
 async def get_logo():
     file_path = os.path.join("src","static","assets", "favicon.ico")
     return FileResponse(file_path, media_type="image/jpeg")
+
+@router.get("/api/categories")
+async def categories():
+    l = []
+    for key in Category:
+        l.append(key.value)
+    return {"categories": l}

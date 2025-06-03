@@ -166,6 +166,117 @@ class NewsCommands(app_commands.Group):
             "✅ News created and broadcasted to all subscribers!", ephemeral=True
         )
 
+    @app_commands.command(
+        name="edit",
+        description="Edit an existing news item (and update all previous embeds)."
+    )
+    @app_commands.describe(
+        news_id="The ID of the news item to edit",
+        title="(Optional) New title",
+        description="(Optional) New description",
+        image_url="(Optional) New image URL",
+        credit="(Optional) New credit/source",
+        category="(Optional) New category",
+        region="(Optional) New region",
+        language="(Optional) New language"
+    )
+    async def edit(
+        self,
+        interaction: discord.Interaction,
+        news_id: int,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        image_url: Optional[str] = None,
+        credit: Optional[str] = None,
+        category: Optional[Category] = None,
+        region: Optional[Region] = None,
+        language: Optional[Languages] = None,
+    ) -> None:
+        # 1) Fetch and permission check
+        news = await NewsSchema.get_or_none(id=news_id)
+        if news is None:
+            await interaction.response.send_message(
+                "❌ News ID not found.", ephemeral=True
+            )
+            return
+
+        is_reporter = (int(news.reporter) == interaction.user.id)
+        is_admin = (str(interaction.user.id) in ADMIN_ID)
+        if not (is_reporter or is_admin):
+            await interaction.response.send_message(
+                "❌ You are not allowed to edit this item.", ephemeral=True
+            )
+            return
+
+        # 2) Apply any provided changes to the model
+        updated_fields = []
+        if title is not None:
+            news.title = title
+            updated_fields.append("title")
+        if description is not None:
+            news.description = description
+            updated_fields.append("description")
+        if image_url is not None:
+            news.image_url = image_url
+            updated_fields.append("image_url")
+        if credit is not None:
+            news.credit = credit
+            updated_fields.append("credit")
+        if category is not None:
+            news.category = category.value
+            updated_fields.append("category")
+        if region is not None:
+            news.region = region
+            updated_fields.append("region")
+        if language is not None:
+            news.language = language.value
+            updated_fields.append("language")
+
+        if not updated_fields:
+            await interaction.response.send_message(
+                "⚠️ No changes specified. Provide at least one field to edit.", ephemeral=True
+            )
+            return
+
+        # Save updated fields to the database
+        await news.save(update_fields=updated_fields)
+
+        # 3) Build the new embed from updated values
+        new_embed = news.to_embed()
+
+        # 4) Iterate over every recorded message_id and edit
+        failed = 0
+        for entry in news.message_ids or []:
+            guild_id = entry.get("guild_id")
+            channel_id = entry.get("channel_id")
+            message_id = entry.get("message_id")
+
+            if not (isinstance(guild_id, int) and isinstance(channel_id, int) and isinstance(message_id, int)):
+                continue
+
+            target_guild = interaction.client.get_guild(guild_id)
+            if target_guild is None:
+                failed += 1
+                continue
+
+            target_channel = target_guild.get_channel(channel_id)
+            if not isinstance(target_channel, discord.TextChannel):
+                failed += 1
+                continue
+
+            try:
+                msg = await target_channel.fetch_message(message_id)
+                await msg.edit(embed=new_embed)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                failed += 1
+                continue
+
+        # 5) Acknowledge outcome to the user
+        success_count = len(news.message_ids or []) - failed
+        await interaction.response.send_message(
+            f"✅ Edited news `{news_id}` and updated {success_count} embeds "
+            f"(failed to edit {failed} if any).", ephemeral=True
+        )
 
     @app_commands.command(name="delete", description="Delete a news item by ID")
     @app_commands.describe(news_id="The ID of the news item to delete")
@@ -206,7 +317,7 @@ class NewsCommands(app_commands.Group):
             
         # Finally, delete the DB row
         await news.delete()
-        await news.normalize_news_ids()
+        await news.reset_sqlite_autoincrement("newsschema")
         await interaction.response.send_message(
             f"🗑️ Deleted news `{news_id}` from all subscribers.", ephemeral=True
         )

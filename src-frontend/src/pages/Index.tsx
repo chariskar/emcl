@@ -42,6 +42,31 @@ const Index = () => {
   const [expandable, setExpandable] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  const [categories, setCategories] = useState<string[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState<boolean>(true);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const BASE_URL = "http://localhost:3000"
+  useEffect(() => {
+    fetch(`${BASE_URL}/api/categories`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((json) => {
+          if (Array.isArray(json.categories)) {
+            setCategories(["All News", ...json.categories]);
+          } else {
+            throw new Error("Invalid categories format");
+          }
+        })
+        .catch((err) => {
+          console.error("Category fetch error:", err);
+          setCategoriesError("Failed to load categories.");
+        })
+        .finally(() => {
+          setCategoriesLoading(false);
+        });
+  }, []);
   // Toggle whether an article is expanded.
   const toggleArticle = (id: number) => {
     setExpandedArticles((prev) => {
@@ -52,18 +77,7 @@ const Index = () => {
     });
   };
 
-  // Updated list of all categories (matching backend enum)
-  const categories = [
-    "All News",
-    "World",
-    "Interviews",
-    "Opinion",
-    "Articles",
-    "Sports",
-    "Editorials",
-    "Other",
-  ];
-  const BASE_URL = "http://localhost:3000"
+
   // Initial load: fetch recent news (by language "EN")
   useEffect(() => {
     fetch(`${BASE_URL}/api/recent/EN`)

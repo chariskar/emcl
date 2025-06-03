@@ -47,6 +47,7 @@ class Region(Enum):
 class Category(str, Enum):
     WORLD       = "World"
     INTERVIEWS  = "Interviews"
+    WAR_CONFLICTS = "War & conflicts"
     OPINION     = "Opinion"
     ARTICLES    = "Articles"
     SPORTS      = "Sports"
@@ -281,13 +282,14 @@ class NewsSchema(models.Model):
         top_items = [itm for (_score, itm) in scored[:limit]]
         return top_items
     
-    @classmethod
-    async def normalize_news_ids(cls):
-        news_items = await NewsSchema.all().order_by("id")
-        for new_id, item in enumerate(news_items, start=1):
-            item.id = new_id
-            await item.save(update_fields=["id"])
 
+
+    async def reset_sqlite_autoincrement(self,table_name: str):
+        max_row = await NewsSchema.raw_sql(f"SELECT MAX(id) AS maxid FROM {table_name}")
+        max_id = max_row[0].get("maxid") or 0
+        await NewsSchema.raw_sql(
+            f"INSERT OR REPLACE INTO sqlite_sequence(name, seq) VALUES('{table_name}', {max_id});"
+        )
 
 class GuildSettings(models.Model):
     """
