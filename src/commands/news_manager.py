@@ -68,6 +68,11 @@ class NewsCommands(app_commands.Group):
                 "🚫 You are not registered as a reporter.", ephemeral=True
             )
             return
+        try:
+            _f = int(credit)
+        except Exception:
+            await interaction.response.send_message("Use a fucking user id")
+            return
 
         # 2) Create & save the NewsSchema row
         news = await NewsSchema.create_safe(
