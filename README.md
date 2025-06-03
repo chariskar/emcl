@@ -35,3 +35,4 @@ python -m pip install -r dependencies.txt
 python src/main.py
 ```
 ## note that the api runs on port 3000 by default
+## enable strict type checking for a fun time

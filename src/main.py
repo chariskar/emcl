@@ -80,16 +80,20 @@ async def setup(seted_up: bool):
 
 
 def start_api():
+
     uvicorn.run("utils.api:router", host="0.0.0.0", port=3000)  # No reload
 
-@bot.event
-async def on_ready():
+async def start_db():
     await Tortoise.init(
         db_url="sqlite://db.db",
         modules={"models": ["utils.db"]},
     )
     await Tortoise.generate_schemas()
     print("Schema generated!")
+
+@bot.event
+async def on_ready():
+  
 
     print(f"Logged in as {bot.user} ({bot.user.id})")
 
@@ -100,7 +104,7 @@ async def on_ready():
 
     
 if __name__ == "__main__":
-
+    asyncio.run(start_db())
     api_thread = threading.Thread(target=start_api, daemon=True)
     api_thread.start()
     api_thread.join()

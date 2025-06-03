@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 
+# TODO: use aerich to make auto updating db schemas
+
 from __future__ import annotations
 from typing import Dict, List, Optional, Any, Type, Sequence
 from tortoise import fields, models
@@ -292,9 +294,6 @@ class NewsSchema(models.Model):
         )
 
 class GuildSettings(models.Model):
-    """
-    Stores a mapping (Region or Category → channel_id) in a single JSON field.
-    """
 
     id       = fields.IntField(pk=True)
     guild_id = fields.BigIntField(unique=True)
