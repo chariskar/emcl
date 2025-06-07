@@ -99,6 +99,7 @@ class NewsCommands(app_commands.Group):
             return
 
         main_msg = await main_channel.send(embed=embed)
+        await main_msg.publish()
         news.message_ids = [{
             "guild_id": main_guild.id,
             "channel_id": NEWS_CHANNEL_ID,
