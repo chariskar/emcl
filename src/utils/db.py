@@ -24,7 +24,7 @@ from tortoise import fields, models
 from tortoise.exceptions import DoesNotExist
 from tortoise.fields.relational import ForeignKeyNullableRelation
 from tortoise.expressions import Q
-
+from tortoise import Tortoise
 import discord
 from discord.ext import commands
 import asyncio, os
@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import difflib
 from difflib import SequenceMatcher
+from .reverse_lookup import *
 
 class Region(Enum):
     North_America   = "North America"
@@ -133,46 +134,49 @@ class NewsSchema(models.Model):
             None, self.description.lower(), other.description.lower()
         ).ratio()
         return title_ratio > threshold and desc_ratio > threshold
-
+    
     async def to_dict(self, bot: commands.Bot) -> dict[str, int | str | None]:
+        # Fetch credit user name or fallback
         try:
-            loop = bot.loop  # Get the bot's event loop
-            future = asyncio.run_coroutine_threadsafe(bot.fetch_user(int(self.credit)), loop)
-            credit_user = future.result()
+            credit_user = await bot.fetch_user(int(self.credit))
+            credit_username = credit_user.name
         except discord.NotFound:
             credit_username = f"<Unknown:{self.credit}>"
-        else:
-            credit_username = credit_user.name
+        except Exception as e:
+            credit_username = f"<Error:{self.credit}>"
 
         reporter_user = bot.get_user(int(self.reporter))
         if reporter_user is None:
             try:
                 reporter_user = await bot.fetch_user(int(self.reporter))
+                reporter_username = reporter_user.name
             except discord.NotFound:
                 reporter_username = f"<Unknown:{self.reporter}>"
-            else:
-                reporter_username = reporter_user.name
+            except Exception:
+                reporter_username = f"<Error:{self.reporter}>"
         else:
             reporter_username = reporter_user.name
 
+        # Normalize date to UTC string
+        utc_now = discord.utils.utcnow()
         if self.date.tzinfo is None:
-            date_utc = self.date.replace(tzinfo=discord.utils.utcnow().tzinfo)
+            date_utc = self.date.replace(tzinfo=utc_now.tzinfo)
         else:
-            date_utc = self.date.astimezone(discord.utils.utcnow().tzinfo)
+            date_utc = self.date.astimezone(utc_now.tzinfo)
 
         formatted_date = date_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
         return {
-            "id":          self.id,
-            "title":       self.title,
+            "id": self.id,
+            "title": self.title,
             "description": self.description,
-            "image_url":   self.image_url,
-            "credit":      credit_username,
-            "reporter":    reporter_username,
-            "language":    self.language,
-            "region":      (self.region.value if self.region else "global"),
-            "date":        formatted_date,
-            "category":    self.category
+            "image_url": self.image_url,
+            "credit": credit_username,
+            "reporter": reporter_username,
+            "language": self.language,
+            "region": self.region.value if self.region else "global",
+            "date": formatted_date,
+            "category": self.category
         }
 
     @classmethod
@@ -221,7 +225,7 @@ class NewsSchema(models.Model):
         language:    str,
         category:    str,
         editor:      Optional[ReporterSchema] = None,
-        region:      Optional[Region]        = None,  # now expects Region enum
+        region:      Optional[Region]        = None, 
     ) -> Optional["NewsSchema"]:
         return await cls.create(
             title=title,
@@ -287,11 +291,49 @@ class NewsSchema(models.Model):
 
 
     async def reset_sqlite_autoincrement(self,table_name: str):
-        max_row = await NewsSchema.raw_sql(f"SELECT MAX(id) AS maxid FROM {table_name}")
-        max_id = max_row[0].get("maxid") or 0
-        await NewsSchema.raw_sql(
-            f"INSERT OR REPLACE INTO sqlite_sequence(name, seq) VALUES('{table_name}', {max_id});"
-        )
+        conn = Tortoise.get_connection("default")
+        row = await conn.execute_query_dict(f"SELECT MAX(id) AS maxid FROM {table_name}")
+        max_row = row[0]
+        max_id = max_row["maxid"] or 0
+        await conn.execute_script(f"UPDATE sqlite_sequence SET seq = {max_id} WHERE name = '{table_name}'")
+        
+    @classmethod
+    async def search_with_index(
+        cls,
+        query: str,
+        limit: int = 10,
+        language: Optional[str] = None
+    ):
+        if not news_index.is_initialized:
+            return await cls.search_all(query, limit)
+        
+        candidate_ids = await search_news_fast(query, limit * 2)  # Get more candidates for filtering
+        
+        if not candidate_ids:
+            return []
+        
+        news_items = await cls.filter(id__in=candidate_ids).all()
+        
+        if language:
+            news_items = [item for item in news_items if item.language.upper() == language.upper()]
+        
+        id_to_item = {item.id: item for item in news_items}
+        ordered_results = [id_to_item[news_id] for news_id in candidate_ids if news_id in id_to_item]
+        
+        return ordered_results[:limit]
+    
+    @classmethod
+    async def create_with_index(cls, **kwargs):
+        """Create a news item and add it to the search index"""
+        news_item = await cls.create(**kwargs)
+        add_news_to_index(news_item)
+        return news_item
+    
+    async def delete_with_index(self):
+        """Delete a news item and remove it from the search index"""
+        remove_news_from_index(self.id)
+        await self.delete()
+
 
 class GuildSettings(models.Model):
 
