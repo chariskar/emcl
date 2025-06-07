@@ -160,7 +160,7 @@ async def serve_asset(filename: str):
 
 @router.get("/logo")
 async def get_logo():
-    file_path = os.path.join("src", "static", "assets", "favicon.ico")
+    file_path = os.path.join("src", "static", "favicon.ico")
     return FileResponse(file_path, media_type="image/jpeg")
 
 @router.get("/api/categories")
