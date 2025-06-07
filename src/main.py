@@ -107,5 +107,4 @@ if __name__ == "__main__":
     asyncio.run(start_db())
     api_thread = threading.Thread(target=start_api, daemon=True)
     api_thread.start()
-    api_thread.join()
-    #bot.run(str(os.environ.get("TOKEN")))
+    bot.run(str(os.environ.get("TOKEN")))
