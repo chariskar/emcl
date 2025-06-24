@@ -25,9 +25,8 @@ from tortoise.exceptions import DoesNotExist
 from tortoise.fields.relational import ForeignKeyNullableRelation
 from tortoise.expressions import Q
 from tortoise import Tortoise
-import discord
+import discord, os
 from discord.ext import commands
-import asyncio, os
 from datetime import datetime, timezone
 from enum import Enum
 import difflib
@@ -134,37 +133,58 @@ class NewsSchema(models.Model):
             None, self.description.lower(), other.description.lower()
         ).ratio()
         return title_ratio > threshold and desc_ratio > threshold
-    
+        
     async def to_dict(self, bot: commands.Bot) -> dict[str, int | str | None]:
-        # Fetch credit user name or fallback
+        if not bot or not hasattr(bot, 'fetch_user') or not bot.is_ready():
+            return {
+                "id": self.id,
+                "title": self.title,
+                "description": self.description,
+                "image_url": self.image_url,
+                "credit": f"User:{self.credit}",
+                "reporter": f"User:{self.reporter}",
+                "language": self.language,
+                "region": self.region.value if self.region else "global",
+                "date": self.date.strftime("%Y-%m-%d %H:%M:%S UTC") if self.date else None,
+                "category": self.category
+            }
+        
+        credit_username = f"User:{self.credit}"  
         try:
-            credit_user = await bot.fetch_user(int(self.credit))
-            credit_username = credit_user.name
-        except discord.NotFound:
-            credit_username = f"<Unknown:{self.credit}>"
+            if self.credit:
+                credit_user = await bot.fetch_user(int(self.credit))
+                credit_username = credit_user.name
+        except (discord.NotFound, discord.HTTPException, ValueError) as e:
+            print(f"Could not fetch credit user {self.credit}: {e}")
+            credit_username = f"Unknown:{self.credit}"
         except Exception as e:
-            credit_username = f"<Error:{self.credit}>"
+            print(f"Unexpected error fetching credit user: {e}")
 
-        reporter_user = bot.get_user(int(self.reporter))
-        if reporter_user is None:
-            try:
-                reporter_user = await bot.fetch_user(int(self.reporter))
+        reporter_username = f"User:{self.reporter}"  
+        try:
+            if self.reporter:
+                reporter_user = bot.get_user(int(self.reporter))
+                if reporter_user is None:
+                    reporter_user = await bot.fetch_user(int(self.reporter))
                 reporter_username = reporter_user.name
-            except discord.NotFound:
-                reporter_username = f"<Unknown:{self.reporter}>"
-            except Exception:
-                reporter_username = f"<Error:{self.reporter}>"
-        else:
-            reporter_username = reporter_user.name
+        except (discord.NotFound, discord.HTTPException, ValueError) as e:
+            print(f"Could not fetch reporter user {self.reporter}: {e}")
+            reporter_username = f"Unknown:{self.reporter}"
+        except Exception as e:
+            print(f"Unexpected error fetching reporter user: {e}")
 
-        # Normalize date to UTC string
-        utc_now = discord.utils.utcnow()
-        if self.date.tzinfo is None:
-            date_utc = self.date.replace(tzinfo=utc_now.tzinfo)
-        else:
-            date_utc = self.date.astimezone(utc_now.tzinfo)
-
-        formatted_date = date_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+        # Handle date formatting
+        formatted_date = None
+        if self.date:
+            try:
+                if self.date.tzinfo is None:
+                    date_utc = self.date.replace(tzinfo=discord.utils.utcnow().tzinfo)
+                else:
+                    date_utc = self.date.astimezone(discord.utils.utcnow().tzinfo)
+                formatted_date = date_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except Exception as e:
+                print(f"Error formatting date: {e}")
+                formatted_date = str(self.date)
 
         return {
             "id": self.id,
@@ -178,6 +198,7 @@ class NewsSchema(models.Model):
             "date": formatted_date,
             "category": self.category
         }
+
 
     @classmethod
     def set_bot(cls, bot_instance: commands.Bot) -> None:
@@ -225,7 +246,7 @@ class NewsSchema(models.Model):
         language:    str,
         category:    str,
         editor:      Optional[ReporterSchema] = None,
-        region:      Optional[Region]        = None, 
+        region:      Optional[Region]         = None, 
     ) -> Optional["NewsSchema"]:
         return await cls.create(
             title=title,
@@ -307,7 +328,7 @@ class NewsSchema(models.Model):
         if not news_index.is_initialized:
             return await cls.search_all(query, limit)
         
-        candidate_ids = await search_news_fast(query, limit * 2)  # Get more candidates for filtering
+        candidate_ids = await search_news_fast(query, limit * 2)
         
         if not candidate_ids:
             return []

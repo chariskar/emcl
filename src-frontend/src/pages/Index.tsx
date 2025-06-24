@@ -45,7 +45,7 @@ const Index = () => {
   const [categories, setCategories] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState<boolean>(true);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
-  const BASE_URL = "http:localhost:3000"
+  const BASE_URL = ""
   useEffect(() => {
     fetch(`${BASE_URL}/api/categories`)
         .then((res) => {

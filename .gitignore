@@ -8,3 +8,5 @@ venv
 src/utils/__pycache__/db.cpython-312.pyc
 src/commands/__pycache__/news_manager.cpython-312.pyc
 src/commands/__pycache__/reporter_manager.cpython-312.pyc
+db.db-shm
+db.db-wal
